@@ -4,7 +4,7 @@
 // It isn't very reliable, it's in a Raspberry pi.
 // Consider to build your own server.
 var SIGNALING_SERVER = 'https://webcam.merpi.tk';
-var VERSION = 'v0.5.2';
+var VERSION = 'v0.6.0';
 
 // webrtc structures
 var localStream, remoteStream = undefined, undefined;
@@ -40,10 +40,10 @@ var mediaConstraints = {video: true, audio: true};
 var srvSocket;
 
 var room;
+var buttonsTimer;
 
 // For managing logging and can disable it
 function log(msg) {
-    //alert(msg);
     console.log(msg);
 }
 
@@ -51,7 +51,6 @@ function log(msg) {
 // throw the signaling server
 function send(msg) {
     console.log('Sending message: ',msg)
-    //console.log('Sending message: ', msg);
     srvSocket.emit('message', msg);
 }
 
@@ -73,7 +72,10 @@ $(document).ready(function(){
     });
 });
 
+/***** BEGIN VISUAL *****/
+
 function hideVideosLayer(){
+    fullScreenOff();
     $('#videoContainer').hide();
     $('#roomContainer').show();
 }
@@ -117,6 +119,52 @@ function attachBtns() {
     $('#closeBtn').click(function(e){
         closeConnection();
     });
+
+    $('#fullscreenBtn').click(function(e){
+        toggleFullScreen();
+    });
+
+    $("#videoContainer").mousemove(function() {
+        clearTimeout(buttonsTimer);
+        $("#videoButtons").show(400);
+        buttonsTimer = setTimeout('$("#videoButtons").hide(400);', 2700);
+    }).click(function(){
+        clearTimeout(buttonsTimer);
+        $("#videoButtons").show(400);
+        buttonsTimer = setTimeout('$("#videoButtons").hide(400);', 2700);
+    });
+}
+
+function toggleFullScreen() {
+    /* http://stackoverflow.com/a/10627148 */
+    if ((document.fullScreenElement && document.fullScreenElement !== null) ||
+    (!document.mozFullScreen && !document.webkitIsFullScreen)) {
+        fullScreenOn();
+    } else {
+        fullScreenOff();
+    }
+}
+
+function fullScreenOn() {
+    $('#fullscreenBtn').addClass('activated');
+    if (document.documentElement.requestFullScreen) {
+        document.documentElement.requestFullScreen();
+    } else if (document.documentElement.mozRequestFullScreen) {
+        document.documentElement.mozRequestFullScreen();
+    } else if (document.documentElement.webkitRequestFullScreen) {
+        document.documentElement.webkitRequestFullScreen(Element.ALLOW_KEYBOARD_INPUT);
+    }
+}
+
+function fullScreenOff() {
+    $('#fullscreenBtn').removeClass('activated');
+    if (document.cancelFullScreen) {
+        document.cancelFullScreen();
+    } else if (document.mozCancelFullScreen) {
+        document.mozCancelFullScreen();
+    } else if (document.webkitCancelFullScreen) {
+        document.webkitCancelFullScreen();
+    }
 }
 
 function showWarning(message) {
@@ -126,11 +174,11 @@ function showWarning(message) {
             message + '</div>')
         .appendTo('#alertsBox')
         .delay(4000).hide(500, function() {
-            console.log("entra");
-            console.log($('#alertsBox'));
             $('#alertsBox').children(':hidden').alert('close');
         });
 }
+
+/**** END VISUAL ****/
 
 function closeConnection () {
     hideVideosLayer();
@@ -147,9 +195,6 @@ function attachMsgsHandlers(){
         FirstPeer = true;
         // If the other peer is faster and I don't wait here,
         // the communication never starts.
-        /*navigator.getUserMedia(mediaConstraints, handleUserMedia, handleUserMediaError);
-        console.log('Getting user media with constraints', mediaConstraints);
-        checkAndStart();*/
         navigator.mediaDevices.getUserMedia(mediaConstraints)
         .then(handleUserMedia)
         .then(checkAndStart())
@@ -161,7 +206,6 @@ function attachMsgsHandlers(){
         showVideosLayer();
         log('You have joined the room ' + room);
         ChannelReady = true;
-        /*navigator.getUserMedia(mediaConstraints, handleUserMedia, handleUserMediaError);*/
         navigator.mediaDevices.getUserMedia(mediaConstraints)
         .then(handleUserMedia)
         .catch(handleUserMediaError);
@@ -179,12 +223,6 @@ function attachMsgsHandlers(){
         ChannelReady = true;
     });
 
-    // Log received from the server
-    // TODO: delete this method
-    srvSocket.on('log', function(array){
-        log("¡From server!: " + array);
-    });
-
     // Message from the other peer
     srvSocket.on('message', function (msg) {
         console.log('Received message: ', msg);
@@ -194,6 +232,8 @@ function attachMsgsHandlers(){
             checkAndStart();
         // The starter peer began, my turn.
         } else if (msg.type == 'offer'){
+            console.log('fp:', FirstPeer)
+            console.log('start:', Started);
             if (!FirstPeer && !Started)
                 checkAndStart();
             pc.setRemoteDescription(new RTCSessionDescription(msg));
@@ -225,13 +265,18 @@ function attachMediaStream(video, stream) {
     }
 }
 
+function detachStream(video){
+    video.pause();
+    video.src = '';
+    video.load();
+}
+
 // When user media is obtained
 function handleUserMedia(stream) {
     console.log('got user media ', stream);
     loadLocalStatus(false);
     localStream = stream;
     attachMediaStream(localVideo, stream);
-    //$('#localVideo').attr('src', URL.createObjectURL(stream));
     log('Adding local stream.');
     send('got user media');
 }
@@ -254,8 +299,6 @@ function checkAndStart() {
     }
 }
 
-
-
 // Create a peer connection
 function createPeerConnection() {
     // Create the connection and add my stream
@@ -275,23 +318,6 @@ function createPeerConnection() {
         }
     };
 
-    /* NOT SUPPORTED
-    pc.ontrack = function(e){
-        // Should be remote video stream
-        if (remoteStream){
-            remoteStream.addTrack(e.track);
-        } else {
-            alert('no meida stream')
-            remoteStream = new MediaStream(); // Not supported in Mobiles
-            alert('new stream')
-            remoteStream.addTrack(e.track);
-            alert('stream added')
-        }
-        alert('track' + remoteStream);
-	      $('#remoteVideo').attr('src', URL.createObjectURL(remoteStream));
-    };
-    */
-
     pc.onaddstream = function(e){
         log('remote stream', e.stream);
         loadRemoteStatus(false);
@@ -304,36 +330,13 @@ function createPeerConnection() {
     pc.onremovestream = function (e) {
         log('Remote stream dettached: ', e)
     }
-
-    //alert('created peer con')
 }
 
-/*function handleIceCandidate (e) {
-    console.log('ICE candidate: ', e);
-    if(e.candidate){
-        send({type: 'candidate',
-              label: e.candidate.sdpMLineIndex,
-              id: e.candidate.sdpMid,
-              candidate: e.candidate.candidate});
-    }else{
-        log("There aren't more candidates");
-    }
-}*/
 
 // Create a offer for the other node
 function call(){
     log('Creating offer...');
     pc.createOffer(setLocalAndSendMessage, onSignalingError, sdpConstraints);
-    /*pc.createOffer(sdpConstraints)
-    .then(function(offer){
-        return pc.setLocalDescription(offer);
-    })
-    .then(function(){
-        send(pc.localDescription);
-    })
-    .catch(function(error){
-        console.log('Error call: sending offer: ', error);
-    });*/
 }
 
 // Answer the call
@@ -351,22 +354,29 @@ function onSignalingError(error) {
     log('Error signaling message: ' + error);
 }
 
-function detachStream(video){
-    video.pause();
-    video.src = '';
-    video.load();
-}
-
 function hangup() {
     console.log('Hanging up...');
     if (Started) {
         send('bye');
     }
     Started = false;
+    ChannelReady = false;
+    FirstPeer = false;
     if (pc)
         pc.close();
     pc = null;
-    remoteStream, localStream = null, null;
+    if (localStream){
+        for (var track in localStream.getTracks()){
+            localStream.getTracks()[track].stop();
+        }
+        localStream = null
+    }
+    if (remoteStream){
+        for (var track in remoteStream.getTracks()){
+            remoteStream.getTracks()[track].stop();
+        }
+        remoteStream = null
+    }
     detachStream(localVideo);
     detachStream(remoteVideo);
 }
